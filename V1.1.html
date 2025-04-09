@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bavarian Trader - Day Counter Relocated</title>
+    <style>
+        /* --- CSS --- */
+        :root{--bavarian-blue:#0066b2;--bavarian-white:#fff;--accent-green:#4CAF50;--accent-green-light:#81C784;--dark-bg:#22262e;--medium-bg:#2c313a;--light-bg:#3a3f4b;--text-color:#e8e8e8;--text-muted:#aaa;--border-color:#555;--event-bad:#d32f2f;--event-good:#4CAF50;--event-neutral:#FFC107; --spoilage-warning:#FFEB3B; --spoilage-spoiled:#F44336; --contract-color: #FF9800; }
+        body { margin:0; overflow:hidden; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background-color: var(--dark-bg); color:var(--text-color); display:flex; flex-direction:column; height:100vh; }
+        #game-container, #ui-panel, #instructions, #game-info-bar, .overlay-prompt, #status-overlay, #reset-button-alt-container { position: relative; z-index: 2; }
+        #game-container{flex-grow:1;position:relative;min-height:350px}
+        canvas{display:block;position:absolute;top:0;left:0;width:100%;height:100%;z-index:1}
+        #css-label-container{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;overflow:hidden}
+        .town-label{
+            background-color:rgba(0,0,0,0.7);color:var(--bavarian-white);padding:4px 8px;border-radius:5px;
+            font-size:12px;font-weight:bold;white-space:nowrap;user-select:none;border:1px solid var(--bavarian-blue);
+            text-shadow:1px 1px 3px black;
+            transition: background-color .3s, color .3s, border-color .3s, transform .2s, padding .2s, border-width .2s, max-width 0.2s ease-in-out;
+            max-width: 200px;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .town-label .travel-time, .town-label .newspaper-info { font-size: 0.9em; font-style: italic; color: var(--text-muted); margin-left: 5px; display: block; margin-top: 2px;}
+        .town-label .newspaper-info { color: lightblue; font-style: normal; }
+
+        #ui-panel, #game-info-bar, #instructions, #status-overlay, #reset-button-alt-container { opacity: 0; pointer-events: none; transition: opacity 0.5s ease-in-out; }
+        body.game-started #ui-panel, body.game-started #game-info-bar, body.game-started #instructions, body.game-started #status-overlay, body.game-started #reset-button-alt-container { opacity: 1; pointer-events: auto; }
+        #ui-panel{background-color:rgba(34,38,46,0.97);padding:15px 20px;border-top:4px solid var(--bavarian-blue);max-height:48vh;overflow-y:auto;display:flex;gap:15px; flex-wrap:wrap;box-shadow:0 -3px 15px rgba(0,0,0,0.6);z-index:10}
+        .ui-section{background-color:var(--medium-bg);padding:12px 15px;border-radius:6px;min-width:200px; flex:1;box-shadow:inset 0 0 8px rgba(0,0,0,0.4)}
+        .ui-section h3{margin-top:0;margin-bottom:12px;color:var(--bavarian-blue);border-bottom:1px solid var(--border-color);padding-bottom:6px;font-size:1.1em}
+        .ui-section p,.ui-section li{font-size:.85em;margin-bottom:5px;line-height:1.35}
+        .ui-section ul{list-style:none;padding:0;max-height:130px; overflow-y:auto;margin:0}
+        #player-inventory li{background-color:var(--light-bg);padding:4px 7px;margin-bottom:4px;border-radius:4px;font-size:.8em;border-left:3px solid var(--accent-green); position: relative;}
+        #player-inventory li.spoilage-warning { border-left-color: var(--spoilage-warning); background-color: #4a4a33; }
+        #player-inventory li.spoilage-spoiled { border-left-color: var(--spoilage-spoiled); background-color: #4a3333; text-decoration: line-through; color: var(--text-muted)}
+        .spoilage-indicator, .spoilage-spoiled-text { font-size: 0.8em; font-style: italic; margin-left: 10px; }
+        .spoilage-indicator { color: var(--spoilage-warning); }
+        .spoilage-spoiled-text { color: var(--spoilage-spoiled); font-weight: bold; }
+        #player-inventory .inv-details{font-size:.85em;color:var(--text-muted);margin-left:10px;display:block}
+        #player-inventory .inv-count{font-weight:bold;min-width:12px;display:inline-block}
+        #contracts-list li { background-color: var(--light-bg); padding: 4px 7px; margin-bottom: 4px; border-radius: 4px; font-size: .8em; border-left: 3px solid var(--contract-color); }
+        .contract-details { font-size: 0.9em; color: var(--text-muted); display: block; margin-top: 2px;}
+        .contract-destination { font-weight: bold; color: var(--bavarian-blue); }
+        .contract-reward { color: var(--accent-green); font-weight: bold; }
+        .contract-deadline { color: var(--spoilage-warning); }
+        #market-table{width:100%;border-collapse:collapse;font-size:.8em}
+        #market-table th,#market-table td{border:1px solid var(--border-color);padding:5px 8px;text-align:left}
+        #market-table th{background-color:var(--light-bg);color:var(--bavarian-blue)}
+        #market-table tr:nth-child(even){background-color:var(--medium-bg)}
+        #market-table tr:hover{background-color:#4e5563}
+        button{background-color:var(--bavarian-blue);color:var(--bavarian-white);border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:.85em;transition:background-color .2s ease,transform .1s ease;margin:2px;font-weight:500}
+        button:hover{background-color:#007cce;transform:translateY(-1px)}button:active{transform:translateY(0)}button:disabled{background-color:#555;color:#aaa;cursor:not-allowed;transform:none}
+        .upgrade-button{background-color:var(--accent-green);margin-top:8px}.upgrade-button:hover{background-color:var(--accent-green-light)}
+        #instructions{position:absolute;top:50px; left:10px;background-color:rgba(40,44,52,0.85);padding:10px 15px;border-radius:5px;font-size:.8em;max-width:280px;color:#eee;border:1px solid var(--bavarian-blue);box-shadow:2px 2px 5px rgba(0,0,0,0.3);}
+        #instructions p{margin:3px 0}#instructions strong{color:var(--bavarian-blue)}
+        #game-info-bar { position:absolute; top:50px; right:10px; display:flex; gap: 10px; align-items: center;} /* Keep for potential future use, but content removed */
+        #event-notification{ position:absolute;bottom:calc(48vh + 20px);left:50%;transform:translateX(-50%);color:#fff;padding:10px 20px;border-radius:6px;font-size:.9em;z-index:150;box-shadow:0 0 15px rgba(0,0,0,0.5);opacity:0;transition:opacity .5s ease-in-out,background-color .3s ease;pointer-events:none;text-align:center;background-color:var(--event-neutral)}
+        #event-notification.bad-event{background-color:var(--event-bad)}#event-notification.good-event{background-color:var(--event-good)}#event-notification.show{opacity:1}
+        .overlay-prompt { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); z-index: 190; justify-content: center; align-items: center; }
+        .overlay-prompt.show { display: flex; }
+        #difficulty-prompt { display: flex; }
+        .prompt-box { background-color: var(--medium-bg); padding: 30px 40px; border-radius: 10px; text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.5); border: 2px solid var(--bavarian-blue); max-width: 90%; width: 500px; }
+        .prompt-box h2 { margin-top: 0; color: var(--bavarian-blue); margin-bottom: 25px; }
+        .prompt-box p { margin-bottom: 20px; font-size: 1.1em; }
+        .prompt-box button { font-size: 1em; padding: 10px 20px; margin: 5px 10px; min-width: 100px;}
+        #win-message .prompt-box { background-color:#FFC107; color:#333; font-size:1.8em; font-weight:bold; border-color: #FFA000; }
+        #win-message small { font-size: 0.6em; display: block; margin-top: 10px; }
+        #region-complete-prompt .prompt-box h2 { color: var(--accent-green); }
+        #easy-btn { background-color: var(--accent-green); } #easy-btn:hover { background-color: var(--accent-green-light); }
+        #normal-btn { background-color: var(--bavarian-blue); } #normal-btn:hover { background-color: #007cce; }
+        #hard-btn { background-color: var(--event-bad); } #hard-btn:hover { background-color: #e57373; }
+        #town-event-display { font-size: 0.8em; margin-top: 8px; margin-bottom: 8px; padding: 4px 8px; border-radius: 3px; border: 1px solid var(--border-color); background-color: var(--light-bg); text-align: center; display: none; transition: all 0.3s ease; }
+        #town-event-display.good { border-color: var(--event-good); color: var(--event-good); }
+        #town-event-display.bad { border-color: var(--event-bad); color: var(--event-bad); }
+        #town-event-display.neutral { border-color: var(--event-neutral); color: var(--event-neutral); }
+        .good-color-swatch{display:inline-block;width:10px;height:10px;margin-right:5px;border:1px solid #ccc;vertical-align:middle;border-radius:2px}
+        .town-origin{font-style:italic;color:var(--text-muted)}
+        #status-overlay { position: absolute; top: 10px; left: 10px; background-color: rgba(44, 49, 58, 0.85); padding: 6px 12px; border-radius: 4px; z-index: 100; border: 1px solid #777; font-size: 0.9em; opacity: 0; pointer-events: none; transition: opacity 0.5s ease-in-out; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); color: var(--text-color); }
+        #status-overlay p { margin: 3px 0; white-space: nowrap; }
+        #status-overlay span { font-weight: bold; color: var(--bavarian-white); }
+        #reset-button-alt-container { position: absolute; top: 10px; right: 10px; z-index: 100; opacity: 0; pointer-events: none; transition: opacity 0.5s ease-in-out; }
+        #reset-btn-alt { background-color: var(--event-bad); padding: 6px 10px; font-size: .85em; color: white; border: none; border-radius: 4px; cursor: pointer; box-shadow:-2px 2px 5px rgba(0,0,0,0.3); height: 31px; vertical-align: top; }
+        #reset-btn-alt:hover { background-color: #e57373; }
+    </style>
+</head>
+<body class="">
+    <!-- HTML Structure -->
+    <div id="instructions">
+        <p><strong id="game-title">Bavarian Trader</strong></p>
+        <p>Buy/Sell goods. Prices dynamic. Events & market shifts!</p>
+        <p>Travel costs time & money. Goods spoil!</p>
+        <p>Fulfill contracts. Upgrade cargo!</p>
+        <p>Rotate: Left Drag, Zoom: Scroll</p>
+        <p>Hover over town for travel time & cost.</p>
+        <p style="color: var(--text-muted);">Debug: Press Shift+D to add Gold.</p>
+    </div>
+    <!-- Removed day counter from here -->
+    <div id="game-info-bar"></div>
+    <div id="event-notification">Event Text</div>
+    <div id="game-container"></div>
+    <div id="ui-panel">
+         <div class="ui-section" id="player-status">
+             <h3>Your Status</h3>
+             <!-- Added Day Counter Here -->
+             <p>Day: <span id="status-day-count">0</span></p>
+             <p>Gold: <span id="player-gold">100</span> G</p>
+             <p>Cargo: <span id="player-cargo-current">0</span> / <span id="player-cargo-capacity">15</span></p>
+             <button id="upgrade-cargo-btn" class="upgrade-button">Upgrade Cargo (+<span id="upgrade-amount-display">5</span>) (<span id="upgrade-cost">?</span> G)</button>
+             <button id="buy-newspaper-btn" style="margin-top: 10px;">Buy Newspaper (<span id="newspaper-cost-display">50</span> G)</button>
+             <p style="margin-top:10px;">Inventory:</p>
+             <ul id="player-inventory"></ul>
+         </div>
+         <div class="ui-section" id="contracts-section">
+             <h3>Active Contracts</h3>
+             <ul id="contracts-list"><li>(None)</li></ul>
+         </div>
+         <div class="ui-section" id="town-info">
+             <h3>Current Town: <span id="current-town-name">None</span></h3>
+             <p>Specialty: <span id="town-produces">N/A</span></p>
+             <p>Demand: <span id="town-demands">N/A</span></p>
+             <div id="town-event-display" class="town-event" style="display: none;"></div>
+             <div id="market-controls">
+                 <h3 style="margin-top:10px;">Marketplace</h3>
+                 <table id="market-table">
+                     <thead><tr><th>Good</th><th>Stock</th><th>You Have</th><th>Buy Price</th><th>Sell Price</th><th>Actions</th></tr></thead>
+                     <tbody id="market-body"></tbody>
+                 </table>
+            </div>
+        </div>
+    </div>
+    <div id="difficulty-prompt" class="overlay-prompt">
+        <div class="prompt-box">
+            <h2>Select Difficulty</h2>
+            <button id="easy-btn">Easy</button>
+            <button id="normal-btn">Normal</button>
+            <button id="hard-btn">Hard</button>
+            <p style="font-size: 0.8em; margin-top: 20px; color: var(--text-muted)">
+                Easy: Start in Bavaria (Goal 1500 G)<br>
+                Normal: Start in Swabia (Goal 5000 G, +100 G Start)<br>
+                Hard: Start in Franconia (Goal 12000 G, +250 G Start)
+            </p>
+        </div>
+    </div>
+    <div id="region-complete-prompt" class="overlay-prompt">
+        <div class="prompt-box">
+            <h2 id="region-complete-title">Region Complete!</h2>
+            <p id="region-complete-text">...</p>
+            <button id="continue-btn">Continue to Next Region</button>
+            <button id="stop-btn">Stop Here</button>
+        </div>
+    </div>
+    <div id="win-message" class="overlay-prompt">
+         <div class="prompt-box">
+             <h2>🎉 GRAND TRADER! 🎉</h2>
+             <small id="win-message-text">...</small>
+         </div>
+    </div>
+
+    <!-- NEW Absolutely Positioned UI Elements -->
+    <div id="status-overlay">
+        <p>Goal: <span id="goal-display-alt">---</span> G</p>
+        <p>Needed: <span id="gold-needed-alt">---</span> G</p>
+    </div>
+    <div id="reset-button-alt-container">
+        <button id="reset-btn-alt">Reset</button>
+    </div>
+
+    <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }</script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+        console.log("--- Trader Game Script Starting (Day Counter Relocated) ---");
+
+        // --- Base Configuration ---
+        const MAP_SIZE = 80; const TOWN_RADIUS_BASE = 1.8; const PLAYER_START_GOLD_BASE = 100; const PLAYER_START_CAPACITY = 15; const PLAYER_MAX_CAPACITY = 50; const CARGO_UPGRADE_BASE_COST = 150; const CARGO_UPGRADE_INCREMENT = 5; const MARKET_SHIFT_INTERVAL = 10; const EVENT_PROBABILITY = 0.15; const PRICE_ADJUST_BUY_FACTOR = 1.03; const PRICE_ADJUST_SELL_FACTOR = 0.97; const SHOW_TRADE_PARTICLES = true; const BASE_SPOILAGE_DAYS = 8; const SPOILAGE_WARNING_DAYS_BEFORE = 2; const BASE_TRAVEL_COST = 3; const BASE_COST_PER_DISTANCE_UNIT = 0.15; const BASE_TRAVEL_DAYS = 1; const BASE_DAYS_PER_DISTANCE_UNIT = 0.08; const MAX_TRAVEL_DAYS = 5; const CONTRACT_OFFER_CHANCE = 0.35; const MAX_ACTIVE_CONTRACTS = 3; const CONTRACT_DEADLINE_MIN_DAYS = 8; const CONTRACT_DEADLINE_MAX_DAYS = 20; const CONTRACT_REWARD_FACTOR = 1.8;
+        const TOWN_PULSE_SPEED = 1.5;
+        const TOWN_PULSE_AMOUNT = 0.08;
+        const LOCAL_EVENT_CHANCE_PER_DAY = 0.02;
+        const LOCAL_EVENT_MIN_DURATION = 3;
+        const LOCAL_EVENT_MAX_DURATION = 6;
+        const NEWSPAPER_COST = 50;
+        const NEWSPAPER_DURATION = 10;
+
+        // --- Region Definitions ---
+        const regionThemes = [
+             { name: "Bavaria", townCount: 8, townNames: ["München", "Nürnberg", "Augsburg", "Regensburg", "Würzburg", "Ingolstadt", "Passau", "Bamberg"], goods: [ {id:'bier', name:'Beer', basePrice:12, color:'#DAA520', perishable: true}, {id:'brezen', name:'Pretzels', basePrice:8, color:'#CD853F', perishable: true}, {id:'lederhosen', name:'Lederhosen', basePrice:50, color:'#8B4513', perishable: false}, {id:'weisswurst', name:'Sausages', basePrice:18, color:'#F5F5DC', perishable: true}, {id:'holz', name:'Timber', basePrice:15, color:'#A0522D', perishable: false}, {id:'salz', name:'Salt', basePrice:22, color:'#FFFAFA', perishable: false}, {id:'glas', name:'Glassware', basePrice:35, color:'#AFEEEE', perishable: false} ], winTarget: 1500, spoilageDays: BASE_SPOILAGE_DAYS, travelCostFactor: 1.0, travelDaysFactor: 1.0, groundColor: '#0066B2' },
+             { name: "Swabia", townCount: 7, townNames: ["Stuttgart", "Ulm", "Heilbronn", "Reutlingen", "Tübingen", "Konstanz", "Friedrichshafen", "Aalen"], goods: [ {id: 'spaetzle', name: 'Spätzle', basePrice: 10, color: '#F0E68C', perishable: true}, {id: 'maultaschen', name: 'Maultaschen', basePrice: 16, color: '#D2B48C', perishable: true}, {id: 'clocks', name: 'Cuckoo Clocks', basePrice: 60, color: '#8B4513', perishable: false}, {id: 'tools', name: 'Precision Tools', basePrice: 75, color: '#C0C0C0', perishable: false}, {id: 'wine_sw', name: 'Swabian Wine', basePrice: 20, color: '#B22222', perishable: false}, {id: 'textiles', name: 'Fine Textiles', basePrice: 40, color: '#4682B4', perishable: false}, {id: 'kirsch', name: 'Kirschwasser', basePrice: 30, color: '#DC143C', perishable: false} ], winTarget: 5000, spoilageDays: BASE_SPOILAGE_DAYS - 1, travelCostFactor: 1.15, travelDaysFactor: 1.0, groundColor: '#FFD700' },
+             { name: "Franconia", townCount: 8, townNames: ["Nürnberg-F", "Würzburg-F", "Bamberg-F", "Bayreuth", "Coburg", "Ansbach", "Fürth", "Erlangen"], goods: [ {id: 'wine_fr', name: 'Franconian Wine', basePrice: 25, color: '#800020', perishable: false}, {id: 'toys', name: 'Wooden Toys', basePrice: 18, color: '#DEB887', perishable: false}, {id: 'lebkuchen', name: 'Gingerbread', basePrice: 14, color: '#A0522D', perishable: false}, {id: 'bratwurst_fr', name: 'Nürnberger Bratwurst', basePrice: 20, color: '#F5F5DC', perishable: true}, {id: 'ceramics_fr', name: 'Ceramics', basePrice: 32, color: '#BDB76B', perishable: false}, {id: 'hops', name: 'Hops', basePrice: 11, color: '#90EE90', perishable: true}, {id: 'metalwork', name: 'Metalwork', basePrice: 45, color: '#778899', perishable: false} ], winTarget: 12000, spoilageDays: BASE_SPOILAGE_DAYS - 1, travelCostFactor: 1.2, travelDaysFactor: 1.1, groundColor: '#FF0000' },
+             { name: "Iberia", townCount: 9, townNames: ["Madrid", "Lisbon", "Seville", "Barcelona", "Valencia", "Porto", "Bilbao", "Zaragoza", "Malaga"], goods: [ {id: 'olive_oil', name: 'Olive Oil', basePrice: 18, color: '#808000', perishable: false}, {id: 'wine_ib', name: 'Iberian Wine', basePrice: 22, color: '#8B0000', perishable: false}, {id: 'oranges', name: 'Oranges', basePrice: 9, color: '#FFA500', perishable: true}, {id: 'fish', name: 'Salted Fish', basePrice: 15, color: '#ADD8E6', perishable: true}, {id: 'cork', name: 'Cork', basePrice: 12, color: '#D2B48C', perishable: false}, {id: 'ceramics_ib', name: 'Painted Tiles', basePrice: 38, color: '#4682B4', perishable: false}, {id: 'wool', name: 'Merino Wool', basePrice: 42, color: '#FFF8DC', perishable: false}, {id: 'steel', name: 'Toledo Steel', basePrice: 65, color: '#808080', perishable: false} ], winTarget: 25000, spoilageDays: BASE_SPOILAGE_DAYS - 2, travelCostFactor: 1.3, travelDaysFactor: 1.2, groundColor: '#FFBF00' },
+             { name: "Thirteen Colonies", townCount: 10, townNames: ["Boston", "New York", "Philadelphia", "Williamsburg", "Charleston", "Savannah", "Annapolis", "Providence", "Hartford", "Dover", "Trenton", "Albany", "Portsmouth"], goods: [ {id: 'tobacco', name: 'Tobacco', basePrice: 30, color: '#CD853F', perishable: false }, {id: 'timber_col', name: 'Pine Lumber', basePrice: 16, color: '#A0522D', perishable: false }, {id: 'rum', name: 'Rum', basePrice: 25, color: '#8B4513', perishable: false }, {id: 'furs', name: 'Beaver Pelts', basePrice: 55, color: '#D2B48C', perishable: false }, {id: 'grain', name: 'Wheat Grain', basePrice: 10, color: '#F5DEB3', perishable: true }, {id: 'fish_col', name: 'Dried Cod', basePrice: 14, color: '#ADD8E6', perishable: true }, {id: 'indigo', name: 'Indigo Dye', basePrice: 40, color: '#4B0082', perishable: false }, {id: 'cotton', name: 'Cotton', basePrice: 20, color: '#FFFAFA', perishable: false }, {id: 'iron', name: 'Iron Ore', basePrice: 28, color: '#778899', perishable: false } ], winTarget: 50000, spoilageDays: BASE_SPOILAGE_DAYS - 2, travelCostFactor: 1.5, travelDaysFactor: 1.3, groundColor: '#0A3161' }
+        ];
+        let currentRegionIndex = 0;
+
+        // --- Local Town Events Definitions ---
+        const localTownEvents = [ { name: "Festival", effectDesc: "🎉 Increased demand!", type: 'good', apply: (town) => {}, revert: (town) => {}, priceModifier: (marketInfo, goodId, town) => { marketInfo.sellPrice = Math.max(1, Math.round(marketInfo.sellPrice * 1.15)); if(goodId === town.produces) marketInfo.stock = Math.max(5, Math.ceil(marketInfo.stock * 1.1));} }, { name: "Shortage", effectDesc: "❗ Supply issues!", type: 'bad', apply: (town) => {}, revert: (town) => {}, priceModifier: (marketInfo, goodId, town) => { if (goodId === town.produces) { marketInfo.buyPrice = Math.max(1, Math.round(marketInfo.buyPrice * 1.25)); marketInfo.stock = Math.max(1, Math.floor(marketInfo.stock * 0.5)); } } }, { name: "Trade Blocked", effectDesc: "🚧 Imports difficult!", type: 'bad', apply: (town) => {}, revert: (town) => {}, priceModifier: (marketInfo, goodId, town) => { if (goodId !== town.produces) { marketInfo.stock = Math.max(1, Math.floor(marketInfo.stock * 0.6)); marketInfo.sellPrice = Math.max(1, Math.round(marketInfo.sellPrice * 1.1)); } } }, { name: "Prosperity", effectDesc: "✨ Trade is booming!", type: 'good', apply: (town) => {}, revert: (town) => {}, priceModifier: (marketInfo, goodId, town) => { marketInfo.buyPrice = Math.max(1, Math.round(marketInfo.buyPrice * 0.9)); marketInfo.sellPrice = Math.max(1, Math.round(marketInfo.sellPrice * 1.1)); } } ];
+        const localEventMap = new Map(localTownEvents.map(e => [e.name, e]));
+
+        // --- Game State ---
+        let currentGoods = []; let goodMap = new Map(); let PERISHABLE_GOODS = new Set(); let currentWinTarget = 0; let currentSpoilageDays = BASE_SPOILAGE_DAYS; let currentTravelCostFactor = 1.0; let currentTravelDaysFactor = 1.0; let towns = []; let townNameMap = new Map(); let inventoryItemCounter = 0; let contractIdCounter = 0; let travelCount = 0; let player = { gold: PLAYER_START_GOLD_BASE, inventory: [], capacity: PLAYER_START_CAPACITY, currentTownId: null, contracts: [], hasActiveNewspaper: false, newspaperExpiryDay: null }; let gameWon = false; let regionComplete = false; let eventTimeoutId = null; let lastMarketShiftDay = 0; let currentlyHoveredTownId = null; let originalLabelContent = null; let gameHasStarted = false;
+
+        // --- Three.js Variables ---
+        let scene, camera, renderer, css2dRenderer, controls; let raycaster, mouse; let townObjects = []; let townLabels = []; let routeLines = null; let arrivalParticleSystem, tradeParticleSystem; let groundPlane = null; const clock = new THREE.Clock(true);
+
+        // --- DOM Elements ---
+        const container = document.getElementById('game-container'); const playerGoldEl = document.getElementById('player-gold'); const playerCargoCurrentEl = document.getElementById('player-cargo-current'); const playerCargoCapacityEl = document.getElementById('player-cargo-capacity'); const playerInventoryEl = document.getElementById('player-inventory'); const contractsListEl = document.getElementById('contracts-list'); const currentTownNameEl = document.getElementById('current-town-name'); const townProducesEl = document.getElementById('town-produces'); const townDemandsEl = document.getElementById('town-demands'); const marketBodyEl = document.getElementById('market-body');
+        const statusDayCountEl = document.getElementById('status-day-count'); // New reference for day counter in status
+        const upgradeCargoBtn = document.getElementById('upgrade-cargo-btn'); const upgradeCostEl = document.getElementById('upgrade-cost'); const eventNotificationEl = document.getElementById('event-notification'); const gameTitleEl = document.getElementById('game-title'); const difficultyPromptEl = document.getElementById('difficulty-prompt'); const regionCompletePrompt = document.getElementById('region-complete-prompt'); const regionCompleteTitle = document.getElementById('region-complete-title'); const regionCompleteText = document.getElementById('region-complete-text'); const continueBtn = document.getElementById('continue-btn'); const stopBtn = document.getElementById('stop-btn'); const winMessage = document.getElementById('win-message'); const winMessageText = document.getElementById('win-message-text'); const easyBtn = document.getElementById('easy-btn'); const normalBtn = document.getElementById('normal-btn'); const hardBtn = document.getElementById('hard-btn'); const buyNewspaperBtn = document.getElementById('buy-newspaper-btn'); const newspaperCostDisplay = document.getElementById('newspaper-cost-display'); const upgradeAmountDisplay = document.getElementById('upgrade-amount-display');
+        const statusOverlayEl = document.getElementById('status-overlay');
+        const goalDisplayAltEl = document.getElementById('goal-display-alt');
+        const goldNeededAltEl = document.getElementById('gold-needed-alt');
+        const resetBtnAlt = document.getElementById('reset-btn-alt');
+
+        // --- Function Definitions (Moved Up) ---
+        function shuffleArray(array){ for(let i=array.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[array[i],array[j]]=[array[j],array[i]]}return array;}
+        function calculateDistance(townIdA, townIdB) { const townA=towns.find(t => t.id === townIdA); const townB=towns.find(t => t.id === townIdB); if (!townA || !townB) return 0; const dx=townA.x-townB.x; const dz=townA.z-townB.z; return Math.sqrt(dx*dx+dz*dz); }
+        function calculateTravelDays(fromTownId, toTownId) { if (!fromTownId || fromTownId === toTownId) return 0; const distance = calculateDistance(fromTownId, toTownId); let days = (BASE_TRAVEL_DAYS + Math.floor(distance * BASE_DAYS_PER_DISTANCE_UNIT)) * currentTravelDaysFactor; return Math.min(Math.max(1, Math.round(days)), MAX_TRAVEL_DAYS); }
+        function calculateTravelCost(fromTownId, toTownId) { if (!fromTownId || fromTownId === toTownId) return 0; const distance = calculateDistance(fromTownId, toTownId); const factor = Number(currentTravelCostFactor) || 1.0; let cost = (BASE_TRAVEL_COST + Math.floor(distance * BASE_COST_PER_DISTANCE_UNIT)) * factor; const finalCost = Math.max(1, Math.round(cost)); if(isNaN(finalCost)){ console.error("!!! NaN calculating travel cost!", {distance, factor, cost}); return 1; } return finalCost; }
+        function calculateUpgradeCost() { const upgradesDone = (player.capacity - PLAYER_START_CAPACITY) / CARGO_UPGRADE_INCREMENT; if (isNaN(upgradesDone) || upgradesDone < 0) { console.error("Error calculating upgradesDone!", {capacity: player.capacity, start: PLAYER_START_CAPACITY, increment: CARGO_UPGRADE_INCREMENT }); return Infinity; } const cost = CARGO_UPGRADE_BASE_COST + Math.round(upgradesDone * upgradesDone * 20); if(isNaN(cost)){ console.error("NaN calculating upgrade cost!", {upgradesDone, baseCost: CARGO_UPGRADE_BASE_COST}); return Infinity; } return cost; }
+        function hidePrompts() { difficultyPromptEl.style.display = 'none'; regionCompletePrompt.classList.remove('show'); winMessage.classList.remove('show'); }
+        function disableInteractionButtons(disabled) { const buttons=document.querySelectorAll('#market-table button, #upgrade-cargo-btn, #buy-newspaper-btn'); buttons.forEach(button=>button.disabled=disabled); }
+        function showNotification(message, type = 'neutral') { if (eventTimeoutId) clearTimeout(eventTimeoutId); eventNotificationEl.textContent = message; eventNotificationEl.className = 'show'; eventNotificationEl.classList.remove('bad-event', 'good-event', 'neutral-event'); if (type === 'bad') { eventNotificationEl.classList.add('bad-event'); } else if (type === 'good') { eventNotificationEl.classList.add('good-event'); } else { eventNotificationEl.classList.add('neutral-event'); } eventTimeoutId = setTimeout(clearNotification, 5500); }
+        function clearNotification() { eventNotificationEl.classList.remove('show', 'bad-event', 'good-event', 'neutral-event'); if (eventTimeoutId) clearTimeout(eventTimeoutId); eventTimeoutId = null; }
+        function createTownEventDiv() { const existingDiv = document.getElementById('town-event-display'); if (existingDiv) return existingDiv; const townInfoSection = document.getElementById('town-info'); if (!townInfoSection) {console.error("Could not find town-info section to add event display!"); return null;} const newDiv = document.createElement('div'); newDiv.id = 'town-event-display'; newDiv.className = 'town-event'; newDiv.style.display = 'none'; const demandP = townInfoSection.querySelector('p:nth-of-type(3)'); if (demandP && demandP.nextSibling) { townInfoSection.insertBefore(newDiv, demandP.nextSibling); } else { townInfoSection.appendChild(newDiv); } return newDiv; }
+        function highlightCurrentTownLabel() { if(!townLabels) return; const eventIcons = { "Festival": "🎉", "Shortage": "❗", "Trade Blocked": "🚧", "Prosperity": "✨" }; townLabels.forEach(label => { if(!label || !label.element || !label.userData) return; const townId = label.userData.townId; const townData = towns.find(t => t.id === townId); if (!townData) return; const isCurrent = townId === player.currentTownId; const colorHex = `#${new THREE.Color(townData.color ?? 0xffffff).getHexString()}`; const isHovered = townId === currentlyHoveredTownId; label.element.style.backgroundColor = isCurrent?'rgba(255,255,255,0.9)': isHovered ? 'rgba(100,100,100,0.8)' : 'rgba(0,0,0,0.7)'; label.element.style.color = isCurrent ? '#000' : colorHex; label.element.style.fontWeight = isCurrent ? 'bold' : 'normal'; label.element.style.padding = isCurrent ? '5px 9px' : '4px 8px'; label.element.style.borderWidth = (isCurrent || townData.activeEventName) ? '2px' : '1px'; label.element.style.borderColor = isCurrent ? '#fff' : (townData.activeEventName ? 'var(--event-neutral)' : colorHex); const existingTravelSpan = label.element.querySelector('.travel-time'); const newspaperSpan = label.element.querySelector('.newspaper-info'); let baseContent = townData.name; if (originalLabelContent && townId === currentlyHoveredTownId ) { let tempContent = originalLabelContent; if(newspaperSpan) tempContent = tempContent.replace(newspaperSpan.outerHTML, ''); if(existingTravelSpan) tempContent = tempContent.replace(existingTravelSpan.outerHTML, ''); baseContent = tempContent.split('<br>')[0].trim(); } let eventIndicator = ""; if (townData.activeEventName && !isCurrent) { eventIndicator = " " + (eventIcons[townData.activeEventName] || "!"); } let hoverInfo = (existingTravelSpan ? existingTravelSpan.outerHTML : '') + (newspaperSpan ? newspaperSpan.outerHTML : ''); label.element.innerHTML = baseContent + eventIndicator + hoverInfo; }); }
+
+        // --- 3D Setup ---
+        function initThreeJSCore() { console.log("initThreeJSCore() started"); scene=new THREE.Scene(); scene.background = new THREE.Color(0x22262e); scene.fog=new THREE.Fog(0x22262e,MAP_SIZE*0.7,MAP_SIZE*2.0); const aspect=container.clientWidth/container.clientHeight; camera=new THREE.PerspectiveCamera(60,aspect,0.1,1000); camera.position.set(0,MAP_SIZE*1.1,MAP_SIZE*0.9); camera.lookAt(0,0,0); scene.add(camera); renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(container.clientWidth,container.clientHeight); renderer.setPixelRatio(window.devicePixelRatio); container.appendChild(renderer.domElement); css2dRenderer=new CSS2DRenderer(); css2dRenderer.setSize(container.clientWidth,container.clientHeight); css2dRenderer.domElement.style.position='absolute'; css2dRenderer.domElement.style.top='0px'; css2dRenderer.domElement.id='css-label-container'; container.appendChild(css2dRenderer.domElement); const ambientLight=new THREE.AmbientLight(0xffffff,0.65); scene.add(ambientLight); const directionalLight=new THREE.DirectionalLight(0xffeedd,1.0); directionalLight.position.set(MAP_SIZE*0.6,MAP_SIZE*1.1,MAP_SIZE*0.8); scene.add(directionalLight); const planeGeometry=new THREE.PlaneGeometry(MAP_SIZE*1.5,MAP_SIZE*1.5); const planeMaterial=new THREE.MeshStandardMaterial({color:0x3a4150,roughness:0.9}); groundPlane = new THREE.Mesh(planeGeometry,planeMaterial); groundPlane.rotation.x=-Math.PI/2; groundPlane.position.y=-0.1; scene.add(groundPlane); controls=new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.dampingFactor=0.05; controls.target.set(0,0,0); controls.maxPolarAngle=Math.PI/2-0.01; controls.minDistance=5; controls.maxDistance=MAP_SIZE*2; controls.enabled = false; raycaster=new THREE.Raycaster(); mouse=new THREE.Vector2(); initParticleSystems(); console.log("initThreeJSCore() finished."); }
+        function clearMapObjects() { console.log(`Clearing map objects... Towns: ${townObjects.length}, Labels: ${townLabels.length}`); townObjects.forEach(obj => { if(obj) scene.remove(obj); }); townLabels.forEach(label => { if(label) scene.remove(label); }); if(routeLines) { scene.remove(routeLines); routeLines.geometry.dispose(); routeLines.material.dispose(); } townObjects = []; townLabels = []; routeLines = null; console.log("Map objects cleared."); }
+        function buildMapObjects() {
+            console.log(`Building map objects for ${towns.length} towns...`);
+            const townGeometry=new THREE.SphereGeometry(1,16,12);
+            towns.forEach((townData,i)=>{try{
+                const material=new THREE.MeshStandardMaterial({color:townData.color,metalness:0.2,roughness:0.6});
+                const mesh=new THREE.Mesh(townGeometry,material);
+                const scaleValue = TOWN_RADIUS_BASE*(0.9+Math.random()*0.2);
+                mesh.scale.set(scaleValue, scaleValue, scaleValue);
+                mesh.position.set(townData.x, scaleValue, townData.z); // Center at y=radius
+                mesh.userData={ townId: townData.id, type:'town', radius: scaleValue, originalScale: new THREE.Vector3(scaleValue, scaleValue, scaleValue) };
+                scene.add(mesh);
+                townObjects.push(mesh);
+                const div=document.createElement('div');
+                div.className='town-label';
+                div.textContent=townData.name;
+                div.style.color=`#${new THREE.Color(townData.color).getHexString()}`;
+                div.style.borderColor=`#${new THREE.Color(townData.color).getHexString()}`;
+                const label=new CSS2DObject(div);
+                label.position.set(townData.x, scaleValue * 1.5 + 0.5, townData.z);
+                label.userData={townId:townData.id};
+                scene.add(label);
+                townLabels.push(label);
+            }catch(e){console.error(`Error creating town ${i} (${townData.name}):`,e);}});
+            townGeometry.dispose();
+            console.log(`${townObjects.length} towns & ${townLabels.length} labels added to scene.`);
+            createRouteLines();
+        }
+        function createRouteLines() { console.log("createRouteLines() called"); if(routeLines) scene.remove(routeLines); const points=[]; for(let i=0;i<towns.length;++i){ for(let j=i+1;j<towns.length;++j){ const dx=towns[i].x-towns[j].x; const dz=towns[i].z-towns[j].z; const dist=Math.sqrt(dx*dx+dz*dz); if(dist<MAP_SIZE*0.55){ points.push(new THREE.Vector3(towns[i].x,0.1,towns[i].z)); points.push(new THREE.Vector3(towns[j].x,0.1,towns[j].z));}}} if(points.length>0){ const geometry=new THREE.BufferGeometry().setFromPoints(points); const material=new THREE.LineBasicMaterial({color:0xaaaaaa,transparent:true,opacity:0.4}); routeLines=new THREE.LineSegments(geometry,material); scene.add(routeLines); console.log(`Route lines added.`); } else { console.log("No route lines generated."); routeLines=null; } }
+
+        // --- Particle Systems ---
+        function initParticleSystems() { console.log("initParticleSystems() started"); try { const pc=100;const p=new Float32Array(pc*3);const c=new Float32Array(pc*3);const a=new Float32Array(pc);const s=new Float32Array(pc);const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));g.setAttribute('alpha',new THREE.BufferAttribute(a,1));g.setAttribute('size',new THREE.BufferAttribute(s,1));const m=new THREE.PointsMaterial({vertexColors:true,size:0.8,sizeAttenuation:true,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending});arrivalParticleSystem=new THREE.Points(g.clone(),m.clone());arrivalParticleSystem.userData={particles:[],active:false,lifetime:1.5,time:0};scene.add(arrivalParticleSystem);if(SHOW_TRADE_PARTICLES){tradeParticleSystem=new THREE.Points(g.clone(),m.clone());tradeParticleSystem.userData={particles:[],active:false,lifetime:0.8,time:0};scene.add(tradeParticleSystem);}g.dispose(); m.dispose(); console.log("Particle systems initialized.");}catch(e){console.error("!!! Error init particles:",e);arrivalParticleSystem=null;tradeParticleSystem=null;} }
+        function triggerArrivalParticles(position, baseColor) { if (!arrivalParticleSystem){return;} try { const s=arrivalParticleSystem; const ud=s.userData; const pts=ud.particles=[]; const pos=s.geometry.attributes.position.array; const cls=s.geometry.attributes.color.array; const als=s.geometry.attributes.alpha.array; const szs=s.geometry.attributes.size.array; const clr=new THREE.Color(baseColor); for (let i = 0; i < pos.length / 3; i++) { const i3 = i * 3; const townMesh = townObjects.find(to => to.userData.townId === player.currentTownId); const radius = townMesh ? townMesh.userData.radius : TOWN_RADIUS_BASE; pos[i3 + 0] = position.x; pos[i3 + 1] = position.y + radius * 0.5; pos[i3 + 2] = position.z; const th=Math.random()*Math.PI*2; const ph=Math.acos((Math.random()*2)-1); const sp=5+Math.random()*10; const v={x:Math.sin(ph)*Math.cos(th)*sp,y:Math.cos(ph)*sp+(2+Math.random()*3),z:Math.sin(ph)*Math.sin(th)*sp}; const c=clr.clone().offsetHSL(0,(Math.random()-0.5)*0.2,(Math.random()-0.5)*0.2); cls[i3 + 0] = c.r; cls[i3 + 1] = c.g; cls[i3 + 2] = c.b; als[i] = 1.0; szs[i] = 0.8 + Math.random() * 0.5; pts.push({velocity:v, initialSize:szs[i]}); } s.geometry.attributes.position.needsUpdate=true; s.geometry.attributes.color.needsUpdate=true; s.geometry.attributes.alpha.needsUpdate=true; s.geometry.attributes.size.needsUpdate=true; ud.active=true; ud.time=0; } catch (e) { console.error("Err trigger arrival particles:", e); } }
+        function triggerTradeParticles(position, goodColor = 0xFFD700) { if(!SHOW_TRADE_PARTICLES||!tradeParticleSystem){return;} try{const s=tradeParticleSystem;const ud=s.userData;const pts=ud.particles=[];const pos=s.geometry.attributes.position.array;const cls=s.geometry.attributes.color.array;const als=s.geometry.attributes.alpha.array;const szs=s.geometry.attributes.size.array;const cnt=30;const clr=new THREE.Color(goodColor);for(let i=0;i<cnt;i++){const i3=i*3; const townMesh = townObjects.find(to => to.userData.townId === player.currentTownId); const radius = townMesh ? townMesh.userData.radius : TOWN_RADIUS_BASE; pos[i3+0]=position.x; pos[i3+1]=position.y+radius*0.25; pos[i3+2]=position.z; const sp=3+Math.random()*5; const v={x:(Math.random()-0.5)*sp,y:(Math.random()*0.8+0.2)*sp,z:(Math.random()-0.5)*sp};cls[i3+0]=clr.r;cls[i3+1]=clr.g;cls[i3+2]=clr.b; als[i]=0.8; szs[i]=0.5+Math.random()*0.3; pts.push({velocity:v,initialSize:szs[i]});}for(let i=cnt;i<pos.length/3;i++){als[i]=0.0;} s.geometry.attributes.position.needsUpdate=true; s.geometry.attributes.color.needsUpdate=true; s.geometry.attributes.alpha.needsUpdate=true; s.geometry.attributes.size.needsUpdate=true; ud.active=true; ud.time=0;}catch(e){console.error("Err trigger trade particles:",e);} }
+        function updateParticleSystems(deltaTime) { const dt = (deltaTime <= 1e-6 || isNaN(deltaTime)) ? (1 / 60) : deltaTime; [arrivalParticleSystem, tradeParticleSystem].forEach((system) => { if (!system || !system.userData || !system.userData.active) return; try { const userData = system.userData; userData.time += dt; const positions = system.geometry.attributes.position?.array; const alphas = system.geometry.attributes.alpha?.array; const sizes = system.geometry.attributes.size?.array; const particles = userData.particles; if (!positions || !alphas || !sizes || !particles || particles.length === 0) { userData.active = false; return; } let needsPosUpdate = false; let needsAlphaSizeUpdate = false; const timeRatio = Math.max(0, Math.min(1, userData.time / userData.lifetime)); for (let i = 0; i < particles.length; i++) { const i3 = i * 3; const pData = particles[i]; const dx = pData.velocity.x * dt; const dy = pData.velocity.y * dt; const dz = pData.velocity.z * dt; if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6 || Math.abs(dz) > 1e-6) { positions[i3 + 0] += dx; positions[i3 + 1] += dy; positions[i3 + 2] += dz; needsPosUpdate = true; } pData.velocity.y -= 9.8 * dt; const currentAlpha = 1.0 - timeRatio * timeRatio; const currentSize = pData.initialSize * (1.0 - timeRatio); if (Math.abs(alphas[i] - currentAlpha) > 1e-3 || Math.abs(sizes[i] - currentSize) > 1e-3) { alphas[i] = Math.max(0, currentAlpha); sizes[i] = Math.max(0, currentSize); needsAlphaSizeUpdate = true; } } if (needsPosUpdate) system.geometry.attributes.position.needsUpdate = true; if (needsAlphaSizeUpdate) { system.geometry.attributes.alpha.needsUpdate = true; system.geometry.attributes.size.needsUpdate = true; } if (userData.time >= userData.lifetime) { userData.active = false; for (let i = 0; i < alphas.length; i++) { alphas[i] = 0; } system.geometry.attributes.alpha.needsUpdate = true; } } catch(e) { console.error("Error updating particle system:", e); if(system && system.userData) system.userData.active = false; } }); }
+
+        // --- UI Update Logic ---
+        function updateUI() {
+            console.log(`DEBUG: updateUI called. GameStarted=${gameHasStarted}, Gold=${player.gold}, Target=${currentWinTarget}, CurrentTown=${player.currentTownId}`);
+
+             // Update global day counter (now in status panel)
+             if(statusDayCountEl) statusDayCountEl.textContent = travelCount;
+
+             if (!gameHasStarted || regionComplete || gameWon) {
+                 console.log("DEBUG: updateUI rendering pre-game/ended state.");
+                 playerGoldEl.textContent = player.gold;
+                 goalDisplayAltEl.textContent = '---';
+                 goldNeededAltEl.textContent = '---';
+                 currentTownNameEl.textContent = 'None';
+                 townProducesEl.textContent = 'N/A';
+                 townDemandsEl.textContent = 'N/A';
+                 const marketControls = document.getElementById('market-controls');
+                 if (marketControls) marketControls.style.display = 'none';
+                 const townEventDiv = document.getElementById('town-event-display');
+                 if(townEventDiv) townEventDiv.style.display = 'none';
+                 if(upgradeCargoBtn) upgradeCargoBtn.disabled = true;
+                 if(buyNewspaperBtn) buyNewspaperBtn.disabled = true;
+                 // Clear inventory/contracts display if needed
+                 playerInventoryEl.innerHTML = '<li>(N/A)</li>';
+                 contractsListEl.innerHTML = '<li>(N/A)</li>';
+                 return;
+             }
+
+             // Full UI update for active game
+             try {
+                 const theme = regionThemes[currentRegionIndex];
+                 if(gameTitleEl && theme) gameTitleEl.textContent=`${theme.name} Trader`;
+
+                 if(goalDisplayAltEl) goalDisplayAltEl.textContent = currentWinTarget || '---';
+                 const goldNeeded = Math.max(0, (currentWinTarget || 0) - (isNaN(player.gold) ? 0 : player.gold));
+                 if(goldNeededAltEl) goldNeededAltEl.textContent = `${goldNeeded} G` + (currentWinTarget && goldNeeded <= 0 ? " (Goal Met!)" : "");
+
+                 if(playerGoldEl) playerGoldEl.textContent = isNaN(player.gold) ? 'ERR' : player.gold;
+                 const currentCargo=player.inventory.length;
+                 if(playerCargoCurrentEl) playerCargoCurrentEl.textContent=currentCargo;
+                 if(playerCargoCapacityEl) playerCargoCapacityEl.textContent=player.capacity;
+                 if(newspaperCostDisplay) newspaperCostDisplay.textContent = `${NEWSPAPER_COST}`;
+                 if(buyNewspaperBtn){
+                     buyNewspaperBtn.disabled = !gameHasStarted || player.hasActiveNewspaper || player.gold < NEWSPAPER_COST;
+                     buyNewspaperBtn.textContent = player.hasActiveNewspaper ? `Newspaper Active (Expires Day ${player.newspaperExpiryDay})` : `Buy Newspaper (${NEWSPAPER_COST} G)`;
+                 }
+
+                 playerInventoryEl.innerHTML = '';
+                 if (currentCargo === 0) {
+                     playerInventoryEl.innerHTML = '<li>(Empty)</li>';
+                 } else {
+                     const groupedInventory = {};
+                     player.inventory.forEach(item => { if (!groupedInventory[item.goodId]) { groupedInventory[item.goodId] = []; } groupedInventory[item.goodId].push(item); });
+                     for (const goodId in groupedInventory) {
+                        const items = groupedInventory[goodId]; const good = goodMap.get(goodId); if (!good) continue;
+                        const count = items.length; const avgPurchasePrice = items.reduce((sum, item) => sum + item.purchasePrice, 0) / count;
+                        const li = document.createElement('li'); const swatch = document.createElement('span'); swatch.className = 'good-color-swatch'; swatch.style.backgroundColor = good.color; li.appendChild(swatch);
+                        const countSpan = document.createElement('span'); countSpan.className = 'inv-count'; countSpan.textContent = count; li.appendChild(countSpan); li.appendChild(document.createTextNode(` x ${good.name}`));
+                        if (PERISHABLE_GOODS.has(goodId)) { const oldestItem = items.reduce((oldest, current) => (current.purchaseDay < oldest.purchaseDay ? current : oldest), items[0]); const daysHeld = travelCount - oldestItem.purchaseDay; const daysLeft = currentSpoilageDays - daysHeld; if (daysLeft <= 0) { li.classList.add('spoilage-spoiled'); const spoiledText = document.createElement('span'); spoiledText.className = 'spoilage-spoiled-text'; spoiledText.textContent = '(Spoiled)'; li.appendChild(spoiledText); } else { const indicatorText = document.createElement('span'); indicatorText.className = 'spoilage-indicator'; indicatorText.textContent = `(Spoils in ${daysLeft}d)`; if (daysLeft <= SPOILAGE_WARNING_DAYS_BEFORE) { li.classList.add('spoilage-warning'); } li.appendChild(indicatorText); } }
+                        const detailsSpan = document.createElement('span'); detailsSpan.className = 'inv-details'; detailsSpan.innerHTML = `Avg. Buy: ${avgPurchasePrice.toFixed(1)} G`; li.appendChild(detailsSpan); playerInventoryEl.appendChild(li);
+                     }
+                 }
+
+                 contractsListEl.innerHTML = '';
+                 if (player.contracts.length === 0) {
+                     contractsListEl.innerHTML = '<li>(None)</li>';
+                 } else {
+                    player.contracts.forEach(contract => {
+                        const good = goodMap.get(contract.goodId); const destinationTown = townNameMap.get(contract.destinationTownId); if (!good || !destinationTown) return;
+                        const li = document.createElement('li'); const swatch = document.createElement('span'); swatch.className = 'good-color-swatch'; swatch.style.backgroundColor = good.color; li.appendChild(swatch); li.appendChild(document.createTextNode(`${contract.quantity} x ${good.name} to `));
+                        const destSpan = document.createElement('span'); destSpan.className = 'contract-destination'; destSpan.textContent = destinationTown; li.appendChild(destSpan); const detailsSpan = document.createElement('span'); detailsSpan.className = 'contract-details';
+                        const daysLeft = contract.deadlineDay - travelCount; const deadlineClass = daysLeft <= 2 ? 'spoilage-spoiled' : daysLeft <= 5 ? 'spoilage-warning' : 'contract-deadline'; detailsSpan.innerHTML = `Reward: <span class="contract-reward">${contract.reward} G</span> | Due: Day ${contract.deadlineDay} (<span class="${deadlineClass}">${daysLeft}d left</span>)`; li.appendChild(detailsSpan); contractsListEl.appendChild(li);
+                     });
+                 }
+
+                 const currentTown = towns.find(t => t.id === player.currentTownId);
+                 const marketControls = document.getElementById('market-controls');
+                 const townEventDiv = document.getElementById('town-event-display') || createTownEventDiv();
+
+                 if (gameHasStarted && currentTown) {
+                     console.log(`DEBUG: updateUI rendering for town: ${currentTown.name}`);
+                     if(currentTownNameEl) currentTownNameEl.textContent=currentTown.name;
+                     if(townProducesEl) townProducesEl.textContent=goodMap.get(currentTown.produces)?.name||'N/A';
+                     if(townDemandsEl) townDemandsEl.textContent=goodMap.get(currentTown.demands)?.name||'N/A';
+                     if (townEventDiv) { if (currentTown.activeEventName) { const eventData = localEventMap.get(currentTown.activeEventName); townEventDiv.textContent = `Event: ${currentTown.activeEventName} ${eventData?.effectDesc || ''} (Ends Day ${currentTown.eventExpiryDay})`; townEventDiv.style.display = 'block'; townEventDiv.className = `town-event ${eventData?.type || 'neutral'}`; } else { townEventDiv.style.display = 'none'; } }
+                     if(marketBodyEl) {
+                        marketBodyEl.innerHTML='';
+                        currentGoods.forEach(good=>{
+                            let marketInfo = {...(currentTown.market?.[good.id] ?? { stock: 0, buyPrice: 999, sellPrice: 1 })};
+                            if (currentTown.activeEventName) { const eventData = localEventMap.get(currentTown.activeEventName); if (eventData && eventData.priceModifier) { eventData.priceModifier(marketInfo, good.id, currentTown); marketInfo.buyPrice = Math.max(1, marketInfo.buyPrice); marketInfo.sellPrice = Math.max(1, marketInfo.sellPrice); if (marketInfo.sellPrice >= marketInfo.buyPrice) { marketInfo.sellPrice = Math.max(1, marketInfo.buyPrice - 1); } marketInfo.stock = Math.max(0, marketInfo.stock); } }
+                            const playerHasCount=player.inventory.filter(item=>item.goodId===good.id).length; const row=marketBodyEl.insertRow(); const nameCell=row.insertCell(); const swatch=document.createElement('span'); swatch.className='good-color-swatch'; swatch.style.backgroundColor=good.color; nameCell.appendChild(swatch); nameCell.appendChild(document.createTextNode(good.name)); row.insertCell().textContent=marketInfo.stock; row.insertCell().textContent=playerHasCount; row.insertCell().textContent=`${marketInfo.buyPrice} G`; row.insertCell().textContent=`${marketInfo.sellPrice} G`;
+                            const actionsCell=row.insertCell(); const buyButton=document.createElement('button'); buyButton.textContent='Buy 1'; buyButton.disabled=regionComplete||gameWon||player.gold<marketInfo.buyPrice||player.inventory.length>=player.capacity||marketInfo.stock<=0; buyButton.onclick=()=>buyGood(currentTown.id,good.id); actionsCell.appendChild(buyButton); const sellButton=document.createElement('button'); sellButton.textContent='Sell 1'; sellButton.disabled=regionComplete||gameWon||playerHasCount<=0; sellButton.onclick=()=>sellGood(currentTown.id,good.id); actionsCell.appendChild(sellButton);
+                        });
+                     }
+                     if(marketControls) marketControls.style.display='block';
+                 } else {
+                     console.log("DEBUG: updateUI clearing town-specific info.");
+                     if(currentTownNameEl) currentTownNameEl.textContent='None';
+                     if(townProducesEl) townProducesEl.textContent='N/A';
+                     if(townDemandsEl) townDemandsEl.textContent='N/A';
+                     if(marketBodyEl) marketBodyEl.innerHTML='<tr><td colspan="6">Travel to a town</td></tr>';
+                     if(marketControls) marketControls.style.display='none';
+                     if(townEventDiv) townEventDiv.style.display = 'none';
+                 }
+
+                 if(upgradeAmountDisplay) upgradeAmountDisplay.textContent = CARGO_UPGRADE_INCREMENT;
+                 if(upgradeCargoBtn){
+                     if (player.capacity>=PLAYER_MAX_CAPACITY){ upgradeCargoBtn.textContent="Cargo Maxed Out"; upgradeCargoBtn.disabled=true; if(upgradeCostEl) upgradeCostEl.textContent=""; if(upgradeAmountDisplay && upgradeAmountDisplay.parentElement) upgradeAmountDisplay.parentElement.style.display = 'none'; }
+                     else {
+                         const cost=calculateUpgradeCost();
+                         if(upgradeCostEl) upgradeCostEl.textContent= isFinite(cost) ? cost : '---';
+                         upgradeCargoBtn.disabled = !gameHasStarted || regionComplete || gameWon || player.gold < cost || !isFinite(cost);
+                         upgradeCargoBtn.textContent=`Upgrade Cargo (+${CARGO_UPGRADE_INCREMENT}) (${isFinite(cost) ? cost : '?'} G)`;
+                         if(upgradeAmountDisplay && upgradeAmountDisplay.parentElement) upgradeAmountDisplay.parentElement.style.display = '';
+                     }
+                 }
+                 if (gameHasStarted) { highlightCurrentTownLabel(); }
+             } catch (uiError) {
+                 console.error("Error during updateUI:", uiError);
+             }
+         }
+
+        // --- Core Gameplay Functions ---
+        function travelToTown(targetTownId) { if (gameWon || regionComplete || !gameHasStarted) return; const targetTown = towns.find(t => t.id === targetTownId); const currentTown = towns.find(t => t.id === player.currentTownId); if (!targetTown) { console.error("Target town not found:", targetTownId); return; } if (targetTown.id === player.currentTownId) { console.log("Already in this town."); return; } let travelDays = calculateTravelDays(player.currentTownId, targetTownId); let travelCost = calculateTravelCost(player.currentTownId, targetTownId); if (!currentTown) { travelDays = 0; travelCost = 0; console.warn("No current town, assuming 0 cost/days."); } if (isNaN(player.gold)) { console.error("Player gold NaN before travel!"); player.gold = 0; updateUI(); return;} if (player.gold < travelCost) { showNotification(`Cannot travel. Need ${travelCost} G, you have ${player.gold} G.`, 'bad'); return; } console.log(`Traveling to ${targetTown.name}... Cost: ${travelCost} G, Days: ${travelDays}`); player.gold -= travelCost; const previousDay = travelCount; const arrivalDay = travelCount + travelDays; let marketShiftedThisTrip = false; for (let day = previousDay + 1; day <= arrivalDay; day++) { travelCount = day; console.log(`Advancing to Day ${travelCount}...`); let newspaperExpiredThisDay = false; if (player.hasActiveNewspaper && player.newspaperExpiryDay !== null && travelCount >= player.newspaperExpiryDay) { console.log(`Newspaper expired on Day ${travelCount}.`); player.hasActiveNewspaper = false; player.newspaperExpiryDay = null; showNotification("Newspaper expired! Market conditions have shifted!", 'bad'); assignSpecialtiesAndDemands(); newspaperExpiredThisDay = true; marketShiftedThisTrip = true; } checkAndRemoveSpoiledGoods(travelCount); checkContractFailure(travelCount); updateLocalTownEvents(travelCount); if (!newspaperExpiredThisDay && Math.floor(travelCount / MARKET_SHIFT_INTERVAL) > Math.floor((day - 1) / MARKET_SHIFT_INTERVAL)) { assignSpecialtiesAndDemands(); showNotification(`Market Shift! (Day ${travelCount})`, 'neutral'); marketShiftedThisTrip = true; lastMarketShiftDay = travelCount; } } player.currentTownId = targetTownId; triggerArrivalParticles(new THREE.Vector3(targetTown.x, 0, targetTown.z), targetTown.color); if (Math.random() < EVENT_PROBABILITY) { triggerRandomEvent(targetTown); } else if (!towns.find(t => t.id === player.currentTownId)?.activeEventName && !marketShiftedThisTrip) { clearNotification(); } checkContractCompletion(targetTownId); tryOfferContract(targetTown); updateUI(); checkWinCondition(); }
+        function updateLocalTownEvents(currentDay) { console.log(`--- Checking local events for Day ${currentDay} ---`); let eventChanged = false; towns.forEach(town => { if (town.activeEventName && town.eventExpiryDay !== null && currentDay >= town.eventExpiryDay) { console.log(`Event "${town.activeEventName}" expired in ${town.name}.`); showNotification(`The ${town.activeEventName.toLowerCase()} in ${town.name} has ended.`, 'neutral'); town.activeEventName = null; town.eventExpiryDay = null; eventChanged = true; } if (!town.activeEventName && Math.random() < LOCAL_EVENT_CHANCE_PER_DAY) { const newEvent = localTownEvents[Math.floor(Math.random() * localTownEvents.length)]; town.activeEventName = newEvent.name; town.eventExpiryDay = currentDay + LOCAL_EVENT_MIN_DURATION + Math.floor(Math.random() * (LOCAL_EVENT_MAX_DURATION - LOCAL_EVENT_MIN_DURATION + 1)); console.log(`New event "${town.activeEventName}" started in ${town.name}, expires Day ${town.eventExpiryDay}.`); eventChanged = true; } }); if (eventChanged) { highlightCurrentTownLabel(); const currentTownData = towns.find(t => t.id === player.currentTownId); if (currentTownData) { updateUI(); } } }
+        function triggerRandomEvent(currentTown) { if (!currentTown) return; const event = events[Math.floor(Math.random() * events.length)]; console.log(`EVENT: ${event.name} in ${currentTown.name}`); try { const message = event.effect(currentTown); showNotification(message, event.type); } catch (e) { console.error("Error applying event effect:", event.name, e); showNotification("A strange event occurred...", 'neutral');} }
+        function buyGood(townId, goodId) { if (gameWon || regionComplete || !gameHasStarted) return; const town=towns.find(t=>t.id===townId); const good=goodMap.get(goodId); const baseMarketInfo=town?.market?.[goodId]; if(!town||!good||!baseMarketInfo){console.error("Buy error: Base data missing",townId,goodId);return;} const buyPrice = Number(baseMarketInfo.buyPrice); if (isNaN(buyPrice) || buyPrice <= 0) { console.error(`!!! Invalid BASE buy price for ${good.name}: ${baseMarketInfo.buyPrice}`); return; } if (isNaN(player.gold)) { console.error("!!! Player gold is NaN before buying!"); player.gold = 0; updateUI(); return; } const currentCargo=player.inventory.length; if(player.gold >= buyPrice && currentCargo < player.capacity && baseMarketInfo.stock > 0){ player.gold -= buyPrice; console.log(`Buy: Gold ${player.gold + buyPrice} -> ${player.gold} (-${buyPrice})`); player.inventory.push({id:inventoryItemCounter++,goodId:goodId,purchasePrice:buyPrice,originTownId:townId,purchaseDay:travelCount}); baseMarketInfo.stock -= 1; let nextBuy = Math.max(1, Math.round(buyPrice * PRICE_ADJUST_BUY_FACTOR)); let nextSell = Math.min(nextBuy - 1, Math.max(1, Math.round(baseMarketInfo.sellPrice * PRICE_ADJUST_SELL_FACTOR))); nextSell = Math.max(1, nextSell); if (isNaN(nextBuy)) { console.error("NaN detected in nextBuy price adjust!"); nextBuy = buyPrice + 1; } if (isNaN(nextSell)) { console.error("NaN detected in nextSell price adjust!"); nextSell = Math.max(1, nextBuy - 5); } baseMarketInfo.buyPrice = nextBuy; baseMarketInfo.sellPrice = nextSell; triggerTradeParticles(new THREE.Vector3(town.x,0,town.z),good.color); updateUI();} else { console.warn("Cannot buy (checked vs base prices)", {gold: player.gold, price: buyPrice, cargo: currentCargo, cap: player.capacity, stock: baseMarketInfo.stock}); } }
+        function sellGood(townId, goodId) { if (gameWon || regionComplete || !gameHasStarted) return; const town=towns.find(t=>t.id===townId); const good=goodMap.get(goodId); const baseMarketInfo=town?.market?.[goodId]; if(!town||!good||!baseMarketInfo){console.error("Sell error: Base data missing",townId,goodId);return;} const sellPrice = Number(baseMarketInfo.sellPrice); if (isNaN(sellPrice) || sellPrice <= 0) { console.error(`!!! Invalid BASE sell price for ${good.name}: ${baseMarketInfo.sellPrice}`); return; } if (isNaN(player.gold)) { console.error("!!! Player gold is NaN before selling!"); player.gold = 0; updateUI(); return; } let itemIndex=-1; let oldestPurchaseDay=Infinity; for(let i=0;i<player.inventory.length;i++){if(player.inventory[i].goodId===goodId&&player.inventory[i].purchaseDay<oldestPurchaseDay){oldestPurchaseDay=player.inventory[i].purchaseDay;itemIndex=i;}} if(itemIndex===-1){console.warn(`Cannot sell ${good.name}, not found.`); checkAndRemoveSpoiledGoods(travelCount); updateUI(); return;} const itemToSell=player.inventory[itemIndex]; if(PERISHABLE_GOODS.has(goodId)&&travelCount-itemToSell.purchaseDay>=currentSpoilageDays){console.warn(`Selling spoiled ${good.name}. Removing.`); player.inventory.splice(itemIndex,1); showNotification(`${good.name} spoiled!`, 'bad'); updateUI(); return;} player.gold += sellPrice; console.log(`Sell: Gold ${player.gold - sellPrice} -> ${player.gold} (+${sellPrice})`); player.inventory.splice(itemIndex, 1); baseMarketInfo.stock += 1; let nextSell = Math.max(1, Math.round(sellPrice * PRICE_ADJUST_SELL_FACTOR)); let nextBuy = Math.max(nextSell + 1, Math.round(baseMarketInfo.buyPrice * PRICE_ADJUST_SELL_FACTOR)); if (isNaN(nextSell)) { console.error("NaN detected in nextSell price adjust!"); nextSell = Math.max(1, sellPrice - 1); } if (isNaN(nextBuy)) { console.error("NaN detected in nextBuy price adjust!"); nextBuy = nextSell + 5; } baseMarketInfo.sellPrice = nextSell; baseMarketInfo.buyPrice = nextBuy; triggerTradeParticles(new THREE.Vector3(town.x,0,town.z),good.color); updateUI();}
+        function checkAndRemoveSpoiledGoods(currentDay) { let removedCount=0; const newlySpoiledGoods=new Set(); player.inventory = player.inventory.filter(item=>{if(PERISHABLE_GOODS.has(item.goodId)){const daysHeld=currentDay-item.purchaseDay; if(daysHeld>=currentSpoilageDays){console.log(`Item ${item.id} (${goodMap.get(item.goodId)?.name}) spoiled!`); newlySpoiledGoods.add(goodMap.get(item.goodId)?.name||'Unknown'); removedCount++; return false;}} return true;}); if(removedCount>0){const goodsList=Array.from(newlySpoiledGoods).join(', '); showNotification(`${removedCount} item(s) spoiled (${goodsList})!`, 'bad'); updateUI();} }
+        function attemptCargoUpgrade() { if (gameWon || regionComplete || !gameHasStarted || player.capacity >= PLAYER_MAX_CAPACITY) return; const cost = calculateUpgradeCost(); if (!isFinite(cost)) { showNotification("Error calculating upgrade cost!", 'bad'); return; } if (isNaN(player.gold)) { console.error("Player gold NaN before upgrade attempt!"); player.gold = 0; updateUI(); return; } if (player.gold >= cost) { player.gold -= cost; player.capacity += CARGO_UPGRADE_INCREMENT; console.log(`Upgraded cargo to ${player.capacity} for ${cost}G.`); showNotification(`Cargo capacity increased to ${player.capacity}!`, 'good'); updateUI(); } else { console.warn(`Need ${cost - player.gold} more G to upgrade.`); showNotification(`Need ${cost - player.gold} more Gold to upgrade cargo!`, 'bad'); } }
+        function attemptBuyNewspaper() { if (gameWon || regionComplete || !gameHasStarted || player.hasActiveNewspaper) { console.warn("Cannot buy newspaper now."); return; } if (isNaN(player.gold) || player.gold < NEWSPAPER_COST) { showNotification(`Need ${NEWSPAPER_COST} G for a newspaper!`, 'bad'); return; } player.gold -= NEWSPAPER_COST; player.hasActiveNewspaper = true; player.newspaperExpiryDay = travelCount + NEWSPAPER_DURATION; console.log(`Bought newspaper for ${NEWSPAPER_COST}G. Expires end of Day ${player.newspaperExpiryDay - 1}.`); showNotification(`Newspaper purchased! Reveals town info for ${NEWSPAPER_DURATION} days.`, 'good'); updateUI(); }
+        function generateContract(originTown) { if (!originTown) return null; const possibleGoods=currentGoods.filter(g=>g.id!==originTown.produces&&g.id!==originTown.demands); if(possibleGoods.length===0)return null; const targetGood=possibleGoods[Math.floor(Math.random()*possibleGoods.length)]; const possibleDestinations=towns.filter(t=>t.id!==originTown.id); if(possibleDestinations.length===0)return null; const destinationTown=possibleDestinations[Math.floor(Math.random()*possibleDestinations.length)]; const quantity=Math.max(1, Math.floor(Math.random()*(player.capacity*0.3))+2); const deadline=travelCount+CONTRACT_DEADLINE_MIN_DAYS+Math.floor(Math.random()*(CONTRACT_DEADLINE_MAX_DAYS-CONTRACT_DEADLINE_MIN_DAYS+1)); const baseValue=targetGood.basePrice*quantity; const distance=calculateDistance(originTown.id,destinationTown.id); const distanceFactor=1+(distance/(MAP_SIZE*0.8)); const reward=Math.round(baseValue*CONTRACT_REWARD_FACTOR*distanceFactor); if (isNaN(reward)) { console.error("NaN detected in contract reward calculation!"); return null; } const newContract={id:contractIdCounter++,goodId:targetGood.id,quantity:quantity,destinationTownId:destinationTown.id,originTownId:originTown.id,reward:reward,deadlineDay:deadline}; console.log(`Generated Contract #${newContract.id}: ${quantity} ${targetGood.name} to ${destinationTown.name} by Day ${deadline} for ${reward}G.`); return newContract; }
+        function tryOfferContract(town) { if (gameWon||regionComplete||!gameHasStarted||player.contracts.length>=MAX_ACTIVE_CONTRACTS) return; const existingContractFromTown=player.contracts.some(c=>c.originTownId===town.id); if(existingContractFromTown)return; if (Math.random()<CONTRACT_OFFER_CHANCE){ const contract=generateContract(town); if(contract){ player.contracts.push(contract); showNotification(`${town.name} offers contract: ${contract.quantity} ${goodMap.get(contract.goodId).name} to ${townNameMap.get(contract.destinationTownId)} by Day ${contract.deadlineDay} (${contract.reward} G)!`, 'good'); updateUI(); } } }
+        function checkContractCompletion(arrivalTownId) { if (gameWon||regionComplete||!gameHasStarted) return; const completedContracts=[]; player.contracts=player.contracts.filter(contract=>{ if (contract.destinationTownId===arrivalTownId&&travelCount<=contract.deadlineDay){ const requiredGoodId=contract.goodId; const requiredQuantity=contract.quantity; const availableItems=player.inventory.filter(item=>item.goodId===requiredGoodId); if (availableItems.length>=requiredQuantity){ if(isNaN(player.gold) || isNaN(contract.reward)) { console.error("NaN detected before adding contract reward!"); } else { player.gold += contract.reward; console.log(`Contract #${contract.id} completed! +${contract.reward} G`);} availableItems.sort((a,b)=>a.purchaseDay-b.purchaseDay); const itemsToRemoveIds=new Set(availableItems.slice(0, requiredQuantity).map(item=>item.id)); player.inventory=player.inventory.filter(item=>!itemsToRemoveIds.has(item.id)); completedContracts.push(contract); showNotification(`Contract complete! Delivered ${requiredQuantity} ${goodMap.get(requiredGoodId).name} to ${townNameMap.get(arrivalTownId)}. +${contract.reward} G!`, 'good'); return false; } else { console.log(`Arrived at ${townNameMap.get(arrivalTownId)} for contract #${contract.id}, but lacked goods.`); } } return true; }); if (completedContracts.length > 0) { updateUI(); checkWinCondition(); } }
+        function checkContractFailure(currentDay) { if (gameWon||regionComplete||!gameHasStarted) return; let failedCount = 0; player.contracts=player.contracts.filter(contract=>{ if (currentDay > contract.deadlineDay) { console.log(`Contract #${contract.id} failed.`); showNotification(`Contract failed! Delivery of ${contract.quantity} ${goodMap.get(contract.goodId).name} to ${townNameMap.get(contract.destinationTownId)} missed deadline.`, 'bad'); failedCount++; return false; } return true; }); if (failedCount > 0) { updateUI(); } }
+        function checkWinCondition() { if (gameWon || regionComplete || !gameHasStarted) return; if (isNaN(player.gold)) { console.error("Player gold NaN during win check!"); return; } if (player.gold >= currentWinTarget) { console.log(`--- Region ${currentRegionIndex} Complete ---`); regionComplete = true; clearNotification(); if (currentRegionIndex + 1 < regionThemes.length) { const nextRegion = regionThemes[currentRegionIndex + 1]; regionCompleteTitle.textContent=`${regionThemes[currentRegionIndex].name} Complete!`; regionCompleteText.textContent=`Mastered ${regionThemes[currentRegionIndex].name}! Gold: ${player.gold} G. Continue to ${nextRegion.name}? (Goal: ${nextRegion.winTarget} G)`; regionCompletePrompt.classList.add('show'); } else { triggerFinalWin(); } disableInteractionButtons(true); controls.enabled = false; } }
+        function moveToNextRegion() { if (!regionComplete) return; console.log("Moving to next region..."); controls.enabled = true; startGameRegion(currentRegionIndex + 1, true); }
+        function triggerFinalWin() { console.log("--- GAME WON (Final) ---"); gameWon=true; regionComplete=false; hidePrompts(); winMessageText.textContent=`Conquered all regions! Final Gold: ${player.gold} G.`; winMessage.classList.add('show'); showNotification("🏆 GRAND TRADER OF ALL REALMS! 🏆", 'good'); if(eventTimeoutId)clearTimeout(eventTimeoutId); disableInteractionButtons(true); controls.enabled = false; }
+
+        // --- Event Handlers ---
+        function setupEventListeners() {
+             window.addEventListener('resize', onWindowResize, false);
+             if (renderer && renderer.domElement) {
+                 renderer.domElement.addEventListener('click', onMouseClick, false);
+                 renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+                 console.log("Canvas event listeners added.");
+             } else {
+                 console.error("Renderer not ready during setupEventListeners!");
+             }
+             window.addEventListener('keydown', handleDebugKeys);
+
+             console.log("DEBUG: Checking difficulty button elements...");
+             if (!easyBtn) console.error("DEBUG: easyBtn element NOT FOUND!"); else console.log("DEBUG: easyBtn FOUND.");
+             if (!normalBtn) console.error("DEBUG: normalBtn element NOT FOUND!"); else console.log("DEBUG: normalBtn FOUND.");
+             if (!hardBtn) console.error("DEBUG: hardBtn element NOT FOUND!"); else console.log("DEBUG: hardBtn FOUND.");
+
+             if (easyBtn) easyBtn.addEventListener('click', () => selectDifficulty('easy')); else console.error("Could not attach listener to easyBtn");
+             if (normalBtn) normalBtn.addEventListener('click', () => selectDifficulty('normal')); else console.error("Could not attach listener to normalBtn");
+             if (hardBtn) hardBtn.addEventListener('click', () => selectDifficulty('hard')); else console.error("Could not attach listener to hardBtn");
+
+             console.log("Difficulty button listeners potentially added.");
+
+             upgradeCargoBtn.addEventListener('click', attemptCargoUpgrade);
+             buyNewspaperBtn.addEventListener('click', attemptBuyNewspaper);
+             const newResetButton = document.getElementById('reset-btn-alt');
+             if (newResetButton) {
+                 newResetButton.addEventListener('click', () => { if (confirm("Reset the entire game?")) { location.reload(); } });
+                 console.log("NEW Reset button listener added.");
+             } else {
+                 console.error("!!! NEW Reset Button element (#reset-btn-alt) not found!");
+             }
+             continueBtn.addEventListener('click', moveToNextRegion);
+             stopBtn.addEventListener('click', () => { if (regionComplete) triggerFinalWin(); });
+             console.log("Other UI button listeners added.");
+        }
+        function handleDebugKeys(event) { if (event.shiftKey && event.key === 'D') { event.preventDefault(); const amountStr = prompt("DEBUG: Enter amount of gold to add:", "10000"); if (amountStr === null) { console.log("Debug gold add cancelled."); return; } const amount = parseInt(amountStr, 10); if (!isNaN(amount) && amount > 0) { if (isNaN(player.gold)) {console.error("Player gold NaN before debug add!"); player.gold = 0;} player.gold += amount; console.log(`DEBUG: Added ${amount} gold. New total: ${player.gold}`); showNotification(`DEBUG: Added ${amount} G`, 'good'); updateUI(); checkWinCondition(); } else { console.warn("DEBUG: Invalid amount entered."); showNotification("DEBUG: Invalid amount.", 'bad'); } } }
+        function onWindowResize() { if(!camera||!renderer||!css2dRenderer)return;const w=container.clientWidth;const h=container.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h);css2dRenderer.setSize(w,h);}
+        function onMouseClick(event) { if(gameWon || regionComplete || !gameHasStarted) return; const r=renderer.domElement.getBoundingClientRect();mouse.x=((event.clientX-r.left)/r.width)*2-1;mouse.y=-((event.clientY-r.top)/r.height)*2+1;raycaster.setFromCamera(mouse,camera);const i=raycaster.intersectObjects(townObjects);if(i.length>0){const o=i[0].object;if(o.userData.type==='town'){ if(o.userData.townId!==player.currentTownId){travelToTown(o.userData.townId);}else{console.log("Clicked on current town.");}} } }
+        function onMouseMove(event) {
+             if (gameWon || regionComplete || !gameHasStarted) return;
+             const rect = renderer.domElement.getBoundingClientRect();
+             mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+             raycaster.setFromCamera(mouse, camera);
+             const intersects = raycaster.intersectObjects(townObjects);
+             let intersectedTownId = null;
+             if (intersects.length > 0) {
+                 intersectedTownId = intersects[0].object.userData.townId;
+             }
+
+             if (intersectedTownId !== currentlyHoveredTownId) {
+                 // Reset previous label
+                 if (currentlyHoveredTownId !== null) {
+                     const previousLabel = townLabels.find(l => l.userData.townId === currentlyHoveredTownId);
+                     if (previousLabel && originalLabelContent !== null) {
+                         previousLabel.element.innerHTML = originalLabelContent;
+                         previousLabel.element.style.maxWidth = ''; // Reset max-width via style
+                         previousLabel.element.style.whiteSpace = 'nowrap'; // Reset white-space
+                     }
+                 }
+
+                 // Update new label
+                 if (intersectedTownId !== null) {
+                     const newLabel = townLabels.find(l => l.userData.townId === intersectedTownId);
+                     const townData = towns.find(t => t.id === intersectedTownId);
+                     if (newLabel && townData) {
+                         originalLabelContent = townData.name; // Store original name
+                         let hoverText = "";
+                         let newspaperText = "";
+                         let needsExpansion = false;
+
+                         if (player.currentTownId && intersectedTownId !== player.currentTownId) {
+                             const travelDays = calculateTravelDays(player.currentTownId, intersectedTownId);
+                             const travelCost = calculateTravelCost(player.currentTownId, intersectedTownId);
+                             hoverText = ` <span class="travel-time">(Travel: ${travelDays}d / ${travelCost}G)</span>`;
+                         }
+                         if (player.hasActiveNewspaper) {
+                             const produces = goodMap.get(townData.produces)?.name || 'N/A';
+                             const demands = goodMap.get(townData.demands)?.name || 'N/A';
+                             newspaperText = `<span class="newspaper-info">(P: ${produces}, D: ${demands})</span>`;
+                             needsExpansion = true;
+                         }
+
+                         newLabel.element.innerHTML = originalLabelContent + hoverText + (newspaperText ? '<br>' + newspaperText : '');
+
+                         // Dynamically adjust style if newspaper info is present
+                         if (needsExpansion) {
+                             newLabel.element.style.maxWidth = '280px'; // Allow expansion
+                             newLabel.element.style.whiteSpace = 'normal'; // Allow wrapping
+                         } else {
+                             newLabel.element.style.maxWidth = ''; // Reset to CSS default
+                             newLabel.element.style.whiteSpace = 'nowrap';
+                         }
+                     }
+                 } else {
+                     originalLabelContent = null;
+                 }
+                 currentlyHoveredTownId = intersectedTownId;
+                 highlightCurrentTownLabel(); // Update background/border
+             }
+        }
+
+        // --- Animation Loop ---
+        function animate() { requestAnimationFrame(animate); try { const deltaTime = clock.getDelta(); const elapsedTime = clock.getElapsedTime(); if (gameHasStarted && !gameWon && !regionComplete) { controls.enabled = true; controls.update(); if (townObjects && townObjects.length > 0) { const pulseScaleOffset = 1.0 + Math.sin(elapsedTime * TOWN_PULSE_SPEED) * TOWN_PULSE_AMOUNT; townObjects.forEach(townMesh => { if (townMesh && townMesh.userData.originalScale) { townMesh.scale.set( townMesh.userData.originalScale.x * pulseScaleOffset, townMesh.userData.originalScale.y * pulseScaleOffset, townMesh.userData.originalScale.z * pulseScaleOffset ); } }); } } else { controls.enabled = false; } updateParticleSystems(deltaTime); if (renderer && scene && camera) { renderer.render(scene, camera); } else { return; } if (css2dRenderer && scene && camera) { css2dRenderer.render(scene, camera); } } catch (error) { console.error("Error in animation loop:", error); } }
+
+        // --- Define Events Array ---
+        const events = [
+            {name:"Bumper Harvest",type:"good",effect:(t)=>{const g=goodMap.get(t.produces);if(!g||!t.market[t.produces])return`${t.name} issue.`;t.market[t.produces].stock=Math.round(t.market[t.produces].stock*1.5)+5;t.market[t.produces].buyPrice=Math.max(1,Math.round(t.market[t.produces].buyPrice*0.8));return`${t.name} bumper harvest of ${g.name}!`;}},
+            {name:"Trade Festival",type:"good",effect:(t)=>{Object.values(t.market).forEach(m=>{m.buyPrice=Math.max(1,Math.round(m.buyPrice*0.9));m.sellPrice=Math.max(1,Math.round(m.sellPrice*1.15));});return`Festival in ${t.name}! Sell prices up.`;}},
+            {name:"Bandit Toll",type:"bad",effect:(t)=>{if(isNaN(player.gold)) player.gold=0; const toll=Math.min(player.gold,Math.max(10,Math.floor(player.gold*0.1))); if(!isNaN(toll)) player.gold-=toll; else console.error("NaN detected in bandit toll!"); updateUI(); return`Bandits demand ${toll} G near ${t.name}!`;}},
+            {name:"Poor Weather",type:"bad",effect:(t)=>{const g=goodMap.get(t.produces);if(!g||!t.market[t.produces])return`${t.name} issue.`;t.market[t.produces].stock=Math.max(1,Math.round(t.market[t.produces].stock*0.6));t.market[t.produces].buyPrice=Math.max(1,Math.round(t.market[t.produces].buyPrice*1.2));return`Poor weather hits ${t.name}'s ${g.name} production.`;}},
+            {name:"Market Rumor",type:"neutral",effect:(t)=>{if(currentGoods.length === 0) return "No goods for rumors."; const g=currentGoods[Math.floor(Math.random()*currentGoods.length)];const d=Math.random()<0.5;if(!t.market[g.id]) return `Market issue in ${t.name}.`; if(d){t.market[g.id].sellPrice=Math.max(1,Math.round(t.market[g.id].sellPrice*1.2));return`Rumors in ${t.name}: high demand for ${g.name}!`;}else{t.market[g.id].buyPrice=Math.max(1,Math.round(t.market[g.id].buyPrice*0.8));return`Rumors in ${t.name}: oversupply of ${g.name}!`;}}}
+        ];
+
+        // --- Game Initialization Logic ---
+        function initGameData() {
+            console.log("initGameData() called");
+            towns = []; townNameMap.clear(); goodMap.clear(); PERISHABLE_GOODS.clear(); inventoryItemCounter = 0; contractIdCounter = 0; travelCount = 0; gameWon = false; regionComplete = false; lastMarketShiftDay = 0; player.currentTownId = null; player.inventory = []; player.contracts = []; player.hasActiveNewspaper = false; player.newspaperExpiryDay = null; clearNotification();
+        }
+
+        function selectDifficulty(difficulty) {
+            console.log(`DEBUG: selectDifficulty called with difficulty: ${difficulty}`);
+            let startIndex = 0;
+            let extraGold = 0;
+            switch(difficulty) {
+                case 'easy': startIndex = 0; extraGold = 0; break;
+                case 'normal': startIndex = 1; extraGold = 100; break;
+                case 'hard': startIndex = 2; extraGold = 250; break;
+                default: startIndex = 0; extraGold = 0;
+            }
+            console.log(`DEBUG: Setting player gold and capacity.`);
+            player.gold = PLAYER_START_GOLD_BASE + extraGold;
+            player.capacity = PLAYER_START_CAPACITY;
+
+            console.log("DEBUG: Attempting to hide difficulty prompt.");
+            difficultyPromptEl.style.display = 'none';
+            console.log("DEBUG: Difficulty prompt hidden (style set).");
+
+            console.log(`DEBUG: Calling startGameRegion with index: ${startIndex}`);
+            startGameRegion(startIndex, false);
+            console.log("DEBUG: startGameRegion call finished.");
+        }
+
+        function startGameRegion(regionIndex, isContinuing) {
+             console.log(`DEBUG: startGameRegion START - Index: ${regionIndex}, Continuing: ${isContinuing}`);
+             initGameData();
+             currentRegionIndex = regionIndex;
+             const theme = regionThemes[currentRegionIndex];
+
+             if (groundPlane && groundPlane.material) {
+                 groundPlane.material.color.set(theme.groundColor || '#3a4150');
+             }
+             currentGoods = theme.goods.map(g => ({ ...g }));
+             goodMap = new Map(currentGoods.map(g => [g.id, g]));
+             PERISHABLE_GOODS = new Set(currentGoods.filter(g => g.perishable).map(g => g.id));
+             currentWinTarget = theme.winTarget;
+             currentSpoilageDays = theme.spoilageDays || BASE_SPOILAGE_DAYS;
+             currentTravelCostFactor = theme.travelCostFactor || 1.0;
+             currentTravelDaysFactor = theme.travelDaysFactor || 1.0;
+
+             generateTowns(theme.townCount, theme.townNames);
+             assignSpecialtiesAndDemands();
+             initializeMarketData();
+             console.log("DEBUG: Town generation and market init finished.");
+
+             if (towns.length > 0) {
+                  player.currentTownId = towns[0].id;
+                  console.log(`DEBUG: Set player.currentTownId to ${player.currentTownId}`);
+             } else {
+                  console.error("No towns generated for this region!");
+                  return;
+             }
+
+             clearMapObjects();
+             console.log("DEBUG: clearMapObjects finished.");
+             buildMapObjects();
+             console.log("DEBUG: buildMapObjects finished.");
+
+             if (!gameHasStarted) {
+                 console.log("DEBUG: First time start - setting game state.");
+                 gameHasStarted = true;
+                 console.log("DEBUG: Adding 'game-started' class to body.");
+                 document.body.classList.add('game-started');
+                 console.log("DEBUG: 'game-started' class added.");
+             } else {
+                 console.log("DEBUG: Continuing game - enabling controls.");
+                 controls.enabled = true;
+             }
+
+             console.log(`DEBUG: startGameRegion ALMOST END - Region ${theme.name} started.`);
+             console.log(`DEBUG: State before final updateUI: Gold=${player.gold}, Capacity=${player.capacity}, Target=${currentWinTarget}, CurrentTown=${player.currentTownId}, GameStarted=${gameHasStarted}`);
+
+             updateUI();
+             console.log("DEBUG: FINAL updateUI finished in startGameRegion.");
+
+             if(towns.length > 0 && player.currentTownId) {
+                 const startTown = towns.find(t => t.id === player.currentTownId);
+                 if (startTown) {
+                     triggerArrivalParticles(new THREE.Vector3(startTown.x, 0, startTown.z), startTown.color);
+                 }
+             }
+        }
+
+        function generateTowns(numTowns, names) {
+            console.log(`Generating ${numTowns} towns...`);
+            towns = []; townNameMap.clear(); const baseHue = Math.random() * 360; const maxAttempts = 500; let attempts = 0; const minDistance = MAP_SIZE * 0.15; const namePool = shuffleArray([...names]);
+            for(let i=0; i<numTowns && attempts < maxAttempts;){
+                let placed=false;
+                for(let tryNum=0; tryNum<10 && attempts < maxAttempts; tryNum++, attempts++){
+                    const angle = Math.random() * Math.PI * 2; const radius = Math.sqrt(Math.random()) * MAP_SIZE * 0.45; const x = Math.cos(angle) * radius; const z = Math.sin(angle) * radius;
+                    let tooClose=false;
+                    for(let k=0;k<towns.length;k++){ const dx=x-towns[k].x; const dz=z-towns[k].z; if(Math.sqrt(dx*dx+dz*dz)<minDistance){ tooClose=true; break; } }
+                    if(!tooClose){
+                        const hue = (baseHue + (i * (360/numTowns*0.8)) + (Math.random()*30-15)) % 360; const color = new THREE.Color().setHSL(hue/360, 0.7 + Math.random()*0.2, 0.55 + Math.random()*0.1).getHex(); const townName = namePool[i % namePool.length] || `Town ${i+1}`; const townId = townName.toLowerCase().replace(/[^a-z0-9]/g,'_') + '_' + i;
+                        towns.push({ id: townId, name: townName, x: x, y: 0, z: z, color: color, produces: null, demands: null, market: {}, activeEventName: null, eventExpiryDay: null });
+                        townNameMap.set(townId, townName); i++; placed=true; break;
+                    }
+                }
+                if (!placed) { console.warn(`Could not place town ${i + 1} after multiple attempts.`); break; }
+            }
+            if (attempts >= maxAttempts) { console.error("Reached max attempts generating towns."); }
+            console.log(`Generated ${towns.length} towns.`);
+        }
+        function assignSpecialtiesAndDemands() {
+            console.log("Assigning specialties and demands...");
+            if (currentGoods.length === 0 || towns.length === 0) { console.warn("No goods or towns to assign to."); return; }
+            towns.forEach(town => { town.produces = null; town.demands = null; });
+            shuffleArray(towns); const goodsCopy = shuffleArray([...currentGoods]); const demandCopy = shuffleArray([...currentGoods]);
+            towns.forEach((town, i) => {
+                town.produces = goodsCopy[i % goodsCopy.length].id;
+                let possibleDemands = demandCopy.filter(g => g.id !== town.produces);
+                if (possibleDemands.length === 0) { console.warn(`No valid demand found for ${town.name}`); town.demands = goodsCopy[(i + 1) % goodsCopy.length].id; } // Fallback
+                else { town.demands = possibleDemands[i % possibleDemands.length].id; }
+                console.log(`Town ${town.name}: Produces ${town.produces}, Demands ${town.demands}`);
+            });
+        }
+        function initializeMarketData() {
+            console.log("Initializing market data...");
+            towns.forEach(town => {
+                town.market = {};
+                currentGoods.forEach(good => {
+                    const basePrice = good.basePrice; let stock, buyPrice, sellPrice;
+                    if (town.produces === good.id) { stock = Math.floor(20 + Math.random() * 20); buyPrice = Math.max(1, Math.round(basePrice * (0.8 + Math.random() * 0.2))); sellPrice = Math.max(1, Math.round(buyPrice * (0.8 + Math.random() * 0.15))); }
+                    else if (town.demands === good.id) { stock = Math.floor(5 + Math.random() * 10); buyPrice = Math.max(1, Math.round(basePrice * (1.0 + Math.random() * 0.4))); sellPrice = Math.max(1, Math.round(buyPrice * (0.9 + Math.random() * 0.15))); }
+                    else { stock = Math.floor(8 + Math.random() * 10); buyPrice = Math.max(1, Math.round(basePrice * (0.9 + Math.random() * 0.25))); sellPrice = Math.max(1, Math.round(buyPrice * (0.85 + Math.random() * 0.12))); }
+                    sellPrice = Math.min(buyPrice - 1, sellPrice); sellPrice = Math.max(1, sellPrice);
+                    if (isNaN(buyPrice) || isNaN(sellPrice) || isNaN(stock)) { console.error(`NaN detected in market init for ${town.name}, ${good.name}!`, {basePrice, stock, buyPrice, sellPrice}); stock = 5; buyPrice = 10; sellPrice = 5; }
+                    town.market[good.id] = { stock: Math.round(stock), buyPrice: buyPrice, sellPrice: sellPrice };
+                });
+            });
+        }
+
+        // --- Initialization ---
+        function init() {
+            console.log("Initializing game...");
+            initThreeJSCore();
+            console.log("DEBUG: About to call setupEventListeners from init.");
+            setupEventListeners();
+            console.log("DEBUG: setupEventListeners call finished.");
+            animate();
+            console.log("DEBUG: Showing difficulty prompt.");
+            difficultyPromptEl.style.display = 'flex';
+            console.log("DEBUG: init function finished.");
+        }
+
+        // --- Start ---
+        init();
+
+    </script>
+</body>
+</html>
